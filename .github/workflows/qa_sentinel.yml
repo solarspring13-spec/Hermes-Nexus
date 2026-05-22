@@ -1,0 +1,72 @@
+name: QA-Sentinel — Platform Spec Monitor
+
+on:
+  schedule:
+    # Mon/Wed/Fri at 02:00 UTC (= 10:00 UTC+8 Beijing)
+    - cron: '0 2 * * 1,3,5'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform(s) to monitor'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - openclaw
+          - workbuddy
+
+jobs:
+  sentinel:
+    name: Fetch & Diff Platform Specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Verify toolchain
+        run: |
+          python3 --version
+          echo "Platform target: ${{ github.event.inputs.platform || 'all' }}"
+
+      - name: Restore previous snapshots (for diff baseline)
+        uses: actions/cache@v4
+        id: cache-snapshots
+        with:
+          path: tests/qa_sentinel/snapshots
+          key: qa-sentinel-snapshots-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            qa-sentinel-snapshots-${{ runner.os }}-
+
+      - name: Show cache status
+        run: |
+          if [ "${{ steps.cache-snapshots.outputs.cache-hit }}" = "true" ]; then
+            echo "📦 Cache HIT — previous snapshots restored for diff comparison"
+            ls -la tests/qa_sentinel/snapshots/ 2>/dev/null || echo "  (empty)"
+          else
+            echo "🆕 Cache MISS — first run or cache evicted, establishing baseline snapshots"
+          fi
+
+      - name: Run QA-Sentinel Doc Fetcher
+        id: sentinel-run
+        run: |
+          python3 tests/qa_sentinel/doc_fetcher.py \
+            --platform ${{ github.event.inputs.platform || 'all' }} \
+            --diff \
+            --exit-on-breaking \
+            --output-dir tests/qa_sentinel/snapshots/
+
+      - name: Upload snapshot artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-sentinel-snapshots
+          path: tests/qa_sentinel/snapshots/
+          retention-days: 30

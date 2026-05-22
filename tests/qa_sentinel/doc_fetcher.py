@@ -492,6 +492,8 @@ Examples:
     parser.add_argument("--output-dir", default="tests/qa_sentinel/snapshots")
     parser.add_argument("--diff", action="store_true", help="Diff against last snapshot")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--exit-on-breaking", action="store_true",
+                        help="Exit with code 1 if any platform has breaking changes (for CI/CD)")
     args = parser.parse_args()
 
     snapshots_dir = Path(args.output_dir)
@@ -505,6 +507,8 @@ Examples:
     else:
         print(f"Unknown platform: {args.platform}")
         sys.exit(1)
+
+    breaking_platforms = []
 
     for name, snapshot in results.items():
         if snapshot is None:
@@ -521,6 +525,7 @@ Examples:
             if prev:
                 report = diff_snapshots(prev, snapshot)
                 if report.is_breaking:
+                    breaking_platforms.append(name)
                     print(f"   ⚠️  BREAKING CHANGES DETECTED:")
                     for bc in report.breaking_changes:
                         print(f"      - {bc}")
@@ -538,6 +543,12 @@ Examples:
 
         if args.json:
             print(json.dumps(asdict(snapshot), indent=2, ensure_ascii=False))
+
+    # ── CI Exit Gate ──
+    if args.exit_on_breaking and breaking_platforms:
+        print(f"\n🚨 QA-Sentinel: Breaking changes detected in: {', '.join(breaking_platforms)}")
+        print("   CI pipeline will fail. Review the changes above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
