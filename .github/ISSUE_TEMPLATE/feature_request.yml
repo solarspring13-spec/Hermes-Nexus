@@ -1,0 +1,71 @@
+name: "Feature Request"
+description: "Suggest a new feature for Hermes-Nexus Memoria Engine"
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 功能建议
+
+        感谢你对 Hermes-Nexus 的关注！请描述你的场景和需求，我们会认真评估。
+
+  - type: input
+    id: persona
+    attributes:
+      label: "角色 (Your Role)"
+      description: "你是使用者、开发者、还是平台集成方？"
+      placeholder: "WorkBuddy 使用者 / OpenClaw 开发者 / 其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: pain_point
+    attributes:
+      label: "业务场景与痛点 (Problem & Context)"
+      description: |
+        描述你遇到的具体场景和痛点。为什么现有功能不能满足你的需求？
+        **请用「我的场景是...」「目前的困扰是...」的句式开头。**
+      placeholder: |
+        我的场景是每天需要在 WorkBuddy 中追踪 50+ 个 Agent 任务的进度。
+        目前的困扰是：Kanban 只能看到任务状态，无法按「阻塞类型」筛选，
+        导致每天需要手动翻阅 5 分钟才能找到所有被依赖阻塞的卡。
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired_solution
+    attributes:
+      label: "期望的解决方案 (Proposed Solution)"
+      description: |
+        描述你期望的功能如何工作。可以是自然语言描述。
+        如果有具体的技术想法也欢迎补充。
+      placeholder: |
+        期望在 `kanban --status` 输出中增加 `--filter-by-blocker` 参数，
+        可以按「缺上游结果」或「资源不足」等类型过滤。
+        或者：增加一个 `memory dashboard` 命令，一行展示全局记忆健康状态。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "替代方案 (Alternatives Considered)"
+      description: |
+        你是否考虑过其他替代方案？目前的 workaround 是什么？
+        这对我们理解问题的严重程度很有帮助。
+      placeholder: |
+        目前方案：手动 `grep "blocked"` 在日志里搜，但效率太低。
+        替代尝试：想用 Python 脚本读取 kanban.db 的数据，但数据结构变化频繁。
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "补充说明 (Additional Notes)"
+      description: "任何其他想说的：同类竞品参考、设计灵感、优先级建议等。"
+      placeholder: "LangChain 的 LangSmith 有一个类似的功能..."
+    validations:
+      required: false

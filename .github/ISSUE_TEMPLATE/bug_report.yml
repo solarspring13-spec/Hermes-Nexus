@@ -1,0 +1,106 @@
+name: "Bug Report"
+description: "File a bug report for Hermes-Nexus Memoria Engine"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug 报告
+
+        感谢你花时间提交 bug 报告！请尽量完整地填写以下信息，帮助我们快速定位问题。
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: "宿主平台 (Host Platform)"
+      description: "你的 Memoria Engine 运行在哪个平台上？"
+      options:
+        - "WorkBuddy"
+        - "OpenClaw"
+        - "Generic (Standalone CLI)"
+        - "Unknown / Other"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "Memoria Engine 版本"
+      description: "运行 `python3 -c 'import memoria_engine; print(memoria_engine.__version__)'` 获取版本号"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python_version
+    attributes:
+      label: "Python 版本"
+      description: "运行 `python3 --version` 获取"
+      placeholder: "3.10.12"
+    validations:
+      required: true
+
+  - type: input
+    id: os_info
+    attributes:
+      label: "操作系统"
+      description: "运行 `uname -a`（macOS/Linux）或 `ver`（Windows）获取"
+      placeholder: "macOS 14.5 (arm64) / Ubuntu 22.04 (x86_64) / Windows 11"
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "复现步骤 (Steps to Reproduce)"
+      description: "请提供详细、可复现的步骤。1 - 2 - 3 格式最优。"
+      placeholder: |
+        1. 运行命令 `...`
+        2. 观察输出 `...`
+        3. 出错信息 `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "预期行为 (Expected Behavior)"
+      description: "你期望看到什么结果？"
+      placeholder: "期望引擎成功升级并显示版本号"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: "实际行为 (Actual Behavior)"
+      description: "实际发生了什么？请粘贴完整的错误输出。"
+      placeholder: |
+        ```
+        Traceback (most recent call last):
+          ...
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "日志 / 截图 (Logs & Screenshots)"
+      description: |
+        - 日志路径：`~/.memoria_engine/logs/` 下的相关 `.log` 和 `.err` 文件
+        - 截图：拖拽图片到此文本框中即可上传
+      placeholder: "粘贴日志输出或拖入截图..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "额外上下文 (Additional Context)"
+      description: "任何有助于排查问题的额外信息：最近是否升级过引擎？是否有其他 Skill 同时运行？"
+      placeholder: "最近一次安装是在 2026-05-22..."
+    validations:
+      required: false

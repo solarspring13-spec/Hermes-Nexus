@@ -7,7 +7,7 @@ description: >-
   Cron 调度引擎、Kanban 多 Agent 协作看板。
   所有重度逻辑委托给底层 `memoria_engine` Python 包执行，
   本 SKILL.md 仅作为薄壳路由层。
-  触发词：记忆、回忆、nudge、memory、审查、session、cron、kanban、install-memoria
+  触发词：记忆、回忆、nudge、memory、审查、session、cron、kanban、install-memoria、升级引擎、更新memoria、/update
 metadata:
   hermes:
     tags: [memory, nudge, fts5, semantic, cron, kanban, daemon]
@@ -214,6 +214,47 @@ python3 -m memoria_engine.memory.memory_quality \
   --json
 ```
 输出记忆质量报告：覆盖率、去重率、压缩建议。
+
+---
+
+## Phase 7：系统升级 (System Upgrade)
+
+**触发条件**：用户输入 `升级引擎`、`更新 memoria`、`/update` 等关键词。
+
+### 委托调用
+
+**检查新版本（不升级）**：
+```bash
+python3 -m memoria_engine.utils.updater --check --json
+```
+返回 JSON：
+```json
+{
+  "current_version": "0.1.0",
+  "latest_version": "0.2.0",
+  "update_available": true,
+  "status": "update_available"
+}
+```
+
+**执行平滑升级**：
+```bash
+python3 -m memoria_engine.utils.updater --json
+```
+升级流程：
+1. 从 GitHub Releases API 获取最新版本号
+2. 语义化版本比较（SemVer）
+3. 若有新版本 → `pip install --upgrade git+https://github.com/solarspring13-spec/Hermes-Nexus.git`
+4. 验证安装 → 输出新版本号
+
+**返回解读**：
+- `status: "latest"` → 已是最新，无需操作
+- `status: "upgraded"` → 升级成功 → 回复：**"引擎已平滑升级至最新版本 v{version}"**
+- `status: "network_error"` → 网络不可达 → 回复："无法连接 GitHub，请检查网络后重试"
+- `status: "error"` → 升级失败 → 提示手动执行 `pip install --upgrade git+...`
+
+> **设计原理**：OTA 升级完全委托给 `updater.py`。适配器只做路由 + 结果展示，
+> 不包含任何升级逻辑。版本缓存 1 小时，避免频繁触发 GitHub API 限流。
 
 ---
 

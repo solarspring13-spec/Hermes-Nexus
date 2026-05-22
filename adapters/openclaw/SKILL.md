@@ -7,7 +7,7 @@ description: >-
   Cron scheduling engine, Kanban multi-agent task board.
   All heavy logic delegates to the underlying `memoria_engine` Python package.
   This SKILL.md is a thin-shell routing layer only.
-  TRIGGERS: memory, recall, nudge, review, session, cron, kanban, install-memoria
+  TRIGGERS: memory, recall, nudge, review, session, cron, kanban, install-memoria, upgrade engine, update memoria, /update
 metadata:
   hermes:
     tags: [memory, nudge, fts5, semantic, cron, kanban, daemon]
@@ -220,6 +220,32 @@ python3 -m memoria_engine.memory.memory_quality \
   --json
 ```
 Outputs memory quality report: coverage, dedup rate, compression suggestions.
+
+---
+
+## Phase 7: System Upgrade
+
+**Trigger**: User says `upgrade engine`, `update memoria`, `/update`, etc.
+
+### Delegated call
+
+**Check (no upgrade)**:
+```bash
+python3 -m memoria_engine.utils.updater --check --json
+```
+
+**Smooth upgrade**:
+```bash
+python3 -m memoria_engine.utils.updater --json
+```
+
+Flow: GitHub Releases API → SemVer comparison → `pip install --upgrade` → verify.
+
+**Response interpretation**:
+- `status: "latest"` → Already at latest
+- `status: "upgraded"` → Success → reply: **"Engine upgraded to v{version}"**
+- `status: "network_error"` → GitHub unreachable → suggest retry
+- `status: "error"` → Upgrade failed → suggest manual install
 
 ---
 
