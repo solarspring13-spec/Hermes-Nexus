@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Memoria Engine runtime data (never commit)
+*.db
+*.sqlite3
+*.sqlite
+*.pem
+*.key
+*.token
+
+# Logs
+logs/
+*.log
+
+# Health heartbeat files (runtime only)
+health/heartbeats/
+
+# Sensitive config (never commit)
+settings.json
+models.json
+.env
+.env.local
+.secrets
+
+# Cache
+.cache/
+data/cache/
