@@ -1,0 +1,51 @@
+name: Wiki Sync — docs/wiki/ → GitHub Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/wiki/**'
+  workflow_dispatch:
+
+jobs:
+  sync-wiki:
+    name: Sync docs/wiki/ to Wiki Repo
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare Wiki content (preprocess links for Wiki compatibility)
+        run: |
+          mkdir -p /tmp/wiki-out
+
+          # Copy all .md files from docs/wiki/ to staging area
+          cp docs/wiki/*.md /tmp/wiki-out/
+
+          # Preprocess: convert repo-relative links back to Wiki-style bare page names
+          # 1. [text](./Page.md) → [text](Page)
+          # 2. Remove _Sidebar.md / _Footer.md underscore prefix for Wiki (Wiki uses _Sidebar.md as-is)
+          cd /tmp/wiki-out
+
+          for f in *.md; do
+            # Strip ./ prefix and .md extension from internal wiki links
+            sed -i -E 's|\(\./([A-Za-z0-9_-]+)\.md\)|(\1)|g' "$f"
+          done
+
+          echo "=== Wiki staging area ==="
+          ls -la /tmp/wiki-out/
+
+      - name: Sync to Wiki repository
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          external_repository: ${{ github.repository }}.wiki
+          publish_branch: master
+          publish_dir: /tmp/wiki-out
+          personal_token: ${{ secrets.WIKI_PUSH_TOKEN }}
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'docs: sync wiki from main [${{ github.sha }}]'
+          force_orphan: true

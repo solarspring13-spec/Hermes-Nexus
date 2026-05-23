@@ -1,0 +1,8 @@
+{
+  "_comment": "Hermes-Nexus sync engine configuration template. Copy to config.local.json and customize.",
+  "skills_root": "~/.workbuddy/skills",
+  "_notes": {
+    "skills_root": "Path to your local WorkBuddy skills directory. Default: ~/.workbuddy/skills",
+    "project_root": "AUTO-DERIVED from script location. Do NOT set in config — ignored if present."
+  }
+}

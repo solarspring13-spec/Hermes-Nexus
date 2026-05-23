@@ -61,8 +61,17 @@ REDACTED_DB_URL = "<REDACTED_DB_URL>"
 # ── Source root: all Hermes skills live here ──
 SKILLS_ROOT = Path.home() / ".workbuddy" / "skills"
 
-# ── Target root: Hermes-Nexus project (open-source repo on Desktop) ──
-PROJECT_ROOT = Path.home() / "Desktop" / "Hermes-Nexus"
+# ── Target root: Hermes-Nexus project (auto-derived from script location) ──
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# ── Optional config override (config.local.json) overrides SKILLS_ROOT ──
+_config_path = PROJECT_ROOT / ".maintainer" / "sync" / "config.local.json"
+if _config_path.exists():
+    import json as _json
+    with open(_config_path) as _fh:
+        _config = _json.load(_fh)
+    SKILLS_ROOT = Path(_config.get("skills_root", SKILLS_ROOT))
+    # Note: PROJECT_ROOT must NOT be overridden by config — it is always auto-derived
+
 MEMORIA_ENGINE = PROJECT_ROOT / "memoria_engine"
 
 # ── Directories to create in target ──
