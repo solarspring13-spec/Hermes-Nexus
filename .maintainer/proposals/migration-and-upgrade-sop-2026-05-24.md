@@ -27,7 +27,7 @@
 
 ### 1. 全系统耦合扫描结论
 
-对 `~/Desktop/Hermes-Nexus` 进行了 **25 个维度**的全量扫描：
+对 `~/OpenSource/hermes-nexus` 进行了 **25 个维度**的全量扫描：
 
 | # | 扫描维度 | 结果 | 风险 |
 |---|---------|------|------|
@@ -66,7 +66,7 @@
 
 #### 方案对比
 
-| 维度 | 方案 A: `~/Documents/Repos/` | 方案 B: `~/Repos/` | 方案 C: `~/Documents/OpenSource/` |
+| 维度 | 方案 A: `~/Documents/Repos/` | 方案 B: `~/Repos/` | 方案 C: `~/OpenSource/` |
 |------|---------------------------|-------------------|----------------------------------|
 | iCloud 同步 | ✅ `~/Documents` 默认同步 | ❌ 不同步 | ✅ 同步 |
 | 语义清晰度 | 中等 ("Repos" 偏技术) | 中等 | 高 ("OpenSource" 自描述) |
@@ -75,7 +75,7 @@
 | 跨设备访问 | ✅ iCloud 自动同步 | ❌ 需手动 | ✅ 自动 |
 | Finder 侧栏可见 | ✅ Documents 有系统快捷 | ❌ 需自定义 | ✅ 同 A |
 
-#### **推荐: 方案 C — `~/Documents/OpenSource/`**
+#### **推荐: 方案 C — `~/OpenSource/`**
 
 理由:
 - "OpenSource" 一词自我描述，对非技术背景者也清晰
@@ -84,8 +84,8 @@
 
 目标结构:
 ```
-~/Documents/OpenSource/
-├── hermes-nexus/          ← ~/Desktop/Hermes-Nexus/ 迁移至此
+~/OpenSource/
+├── hermes-nexus/          ← ~/OpenSource/hermes-nexus/ 迁移至此
 ├── project-b/             ← 未来
 ├── project-c/             ← 未来
 └── project-d/             ← 未来
@@ -97,7 +97,7 @@
 
 ```bash
 # 0a. 确认源仓库状态干净
-cd ~/Desktop/Hermes-Nexus && git status --porcelain
+cd ~/OpenSource/hermes-nexus && git status --porcelain
 # 期望: 空输出 (无未提交变更)
 
 # 0b. 确认 remote 正确
@@ -115,20 +115,20 @@ git rev-parse HEAD > /tmp/hermes-nexus-pre-migration-sha.txt
 #### Step 1: 创建目标结构
 
 ```bash
-mkdir -p ~/Documents/OpenSource
+mkdir -p ~/OpenSource
 ```
 
 #### Step 2: 执行物理迁移
 
 ```bash
-mv ~/Desktop/Hermes-Nexus ~/Documents/OpenSource/hermes-nexus
+mv ~/OpenSource/hermes-nexus ~/OpenSource/hermes-nexus
 ```
 
 #### Step 3: 验证 Gate 1 — 仓库完整性
 
 ```bash
 # 3a. Git 历史完整
-cd ~/Documents/OpenSource/hermes-nexus && git log --oneline -3
+cd ~/OpenSource/hermes-nexus && git log --oneline -3
 # 期望: 与迁移前一致
 
 # 3b. Remote 未变
@@ -148,36 +148,36 @@ git tag -l
 
 ```bash
 # 4a. 从新路径运行 sync.py --diff
-python3 ~/Documents/OpenSource/hermes-nexus/.maintainer/sync/sync.py --diff 2>&1 | head -10
+python3 ~/OpenSource/hermes-nexus/.maintainer/sync/sync.py --diff 2>&1 | head -10
 # 期望: 正常启动，无 ImportError / FileNotFoundError
 
 # 4b. 验证 PROJECT_ROOT 自动推导正确
 python3 -c "
-import sys; sys.path.insert(0, '$HOME/Documents/OpenSource/hermes-nexus/.maintainer/sync')
+import sys; sys.path.insert(0, '$HOME/OpenSource/hermes-nexus/.maintainer/sync')
 import sync
 print('PROJECT_ROOT:', sync.PROJECT_ROOT)
 "
-# 期望: /Users/siriuscyber/Documents/OpenSource/hermes-nexus
+# 期望: /Users/siriuscyber/OpenSource/hermes-nexus
 ```
 
 #### Step 5: 验证 Gate 3 — 全系统回归
 
 ```bash
 # 5a. install.sh 可用性
-bash ~/Documents/OpenSource/hermes-nexus/install.sh --help 2>&1 | head -5
+bash ~/OpenSource/hermes-nexus/install.sh --help 2>&1 | head -5
 
 # 5b. OTA updater
-python3 ~/Documents/OpenSource/hermes-nexus/memoria_engine/utils/updater.py --check 2>&1 | head -5
+python3 ~/OpenSource/hermes-nexus/memoria_engine/utils/updater.py --check 2>&1 | head -5
 
 # 5c. 验证旧 Desktop 路径已空
-ls ~/Desktop/Hermes-Nexus 2>&1 | grep -q "No such" && echo "✅ Desktop 已清理"
+ls ~/OpenSource/hermes-nexus 2>&1 | grep -q "No such" && echo "✅ Desktop 已清理"
 ```
 
 #### Step 6: 文档更新 (需要修改的文件清单)
 
 | 文件 | 变更内容 | 影响 |
 |------|---------|------|
-| `Hermes-Nexus_Governance_Blueprint.md` | 路径拓扑从 `~/Desktop/Hermes-Nexus/` → `~/Documents/OpenSource/hermes-nexus/` | 文档引用 |
+| `Hermes-Nexus_Governance_Blueprint.md` | 路径拓扑从 `~/OpenSource/hermes-nexus/` → `~/OpenSource/hermes-nexus/` | 文档引用 |
 | `WorkBuddy_Master_Blueprint.md` | 如有引用则更新 | 文档引用 |
 | `~/.workbuddy/memory/MEMORY.md` | 追加迁移记录 | 记忆 |
 | `2026-05-24.md` (daily log) | 记录迁移操作 | 记忆 |
@@ -187,10 +187,10 @@ ls ~/Desktop/Hermes-Nexus 2>&1 | grep -q "No such" && echo "✅ Desktop 已清�
 
 ```bash
 # 回滚: 移回 Desktop
-mv ~/Documents/OpenSource/hermes-nexus ~/Desktop/Hermes-Nexus
+mv ~/OpenSource/hermes-nexus ~/OpenSource/hermes-nexus
 
 # 验证
-python3 ~/Desktop/Hermes-Nexus/.maintainer/sync/sync.py --diff
+python3 ~/OpenSource/hermes-nexus/.maintainer/sync/sync.py --diff
 ```
 
 回滚窗口: **7 天**。
@@ -613,7 +613,7 @@ Phase A1.6 — 升级验证
 │
 Phase A1.7 — 代码同步到 Hermes-Nexus (核心 — 推动开源流转)
 ├── 7.1 运行 sync.py 检测差异
-│   cd ~/Documents/OpenSource/hermes-nexus
+│   cd ~/OpenSource/hermes-nexus
 │   python3 .maintainer/sync/sync.py --diff
 │   # 输出: 哪些 Nexus 文件落后于本地 Skill
 │
@@ -627,7 +627,7 @@ Phase A1.7 — 代码同步到 Hermes-Nexus (核心 — 推动开源流转)
 │   # 将本地 enhanced-memory 脚本变更同步到 memoria_engine/ 对应文件
 │
 ├── 7.4 验证 Nexus 端
-│   cd ~/Documents/OpenSource/hermes-nexus
+│   cd ~/OpenSource/hermes-nexus
 │   git diff --stat  # 确认变更范围
 │   python3 -m py_compile memoria_engine/*/**.py  # 编译检查
 │
@@ -696,7 +696,7 @@ Phase A2.3 — 全量升级与验证
 ├── 验证现有 Automations 的 cron 解析不受影响
 │
 Phase A2.4 — 代码同步到 Hermes-Nexus
-├── cd ~/Documents/OpenSource/hermes-nexus
+├── cd ~/OpenSource/hermes-nexus
 ├── python3 .maintainer/sync/sync.py --diff  # 检查 cron/ 差异
 ├── python3 .maintainer/sync/sync.py --push --confirm
 ├── git add memoria_engine/cron/
@@ -740,7 +740,7 @@ Phase A3.3 — 全量升级与验证
 ├── 验证现有 Kanban 任务不受影响
 │
 Phase A3.4 — 代码同步到 Hermes-Nexus
-├── cd ~/Documents/OpenSource/hermes-nexus
+├── cd ~/OpenSource/hermes-nexus
 ├── python3 .maintainer/sync/sync.py --diff
 ├── python3 .maintainer/sync/sync.py --push --confirm
 ├── git add memoria_engine/kanban/
@@ -1228,8 +1228,8 @@ Phase A3.5 — 回滚
 
 ### Phase 2 审批项
 
-- [ ] **新位置**: `~/Documents/OpenSource/hermes-nexus/` (iCloud 同步 + 可扩展)
-- [ ] **扩展结构**: 未来项目 B/C/D 平铺在 `~/Documents/OpenSource/` 下
+- [ ] **新位置**: `~/OpenSource/hermes-nexus/` (iCloud 同步 + 可扩展)
+- [ ] **扩展结构**: 未来项目 B/C/D 平铺在 `~/OpenSource/` 下
 - [ ] **迁移步骤**: Step 0-7 完整执行
 - [ ] **回滚窗口**: 7 天
 
