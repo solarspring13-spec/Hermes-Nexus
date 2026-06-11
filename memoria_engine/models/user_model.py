@@ -190,7 +190,7 @@ INTENT_SEEDS = [
         "intent_name": "investment_dd",
         "pattern_keywords": "尽调,BP,项目,条款,估值,SPA,交割,CVC,战投,财投,融资轮次,portfolio,deal,基金,LP,GP,退出,并购,SPAC",
         "context_bundle": json.dumps({
-            "skills": ["due-diligence", "investment-memo", "律合-lexbridge-counsel"],
+            "skills": ["due-diligence", "investment-memo", "lexbridge-legal-counsel"],
             "memory_sections": ["投资研究", "核心投资判断"],
             "role": "L",
             "auto_actions": ["load_dd_framework"]
@@ -212,9 +212,9 @@ INTENT_SEEDS = [
     {
         "id": "intent_travel_plan",
         "intent_name": "travel_plan",
-        "pattern_keywords": "去,旅行,攻略,酒店,机票,火车票,景点,行程,周末,短途,自驾,花园,美术馆,博物馆,美食,旅拍,打卡,目的地",
+        "pattern_keywords": "去,旅行,攻略,酒店,机票,火车票,景点,行程,周末,短途,自驾,花园,美术馆,博物馆,美食,旅拍,打卡,目的地,云水司,J型旅行,j-travel-planner,郊游,温泉,滑雪,看展,古镇,园林",
         "context_bundle": json.dumps({
-            "skills": ["j-travel-planner", "xiaohongshu", "tc-deeptrip", "flyai", "12306-train-assistant"],
+            "skills": ["j-travel-planner", "xiaohongshu", "tc-deeptrip"],
             "memory_sections": ["个人上下文"],
             "role": "共享",
             "auto_actions": ["search_xiaohongshu", "plan_itinerary"]
@@ -238,7 +238,7 @@ INTENT_SEEDS = [
         "intent_name": "skill_create",
         "pattern_keywords": "创建skill,自动化,Skill,生成Agent,Prompt,模板,固化,复用",
         "context_bundle": json.dumps({
-            "skills": ["skill-creator", "创世架构师-meta-agent-gen", "skills-security-check"],
+            "skills": ["skill-creator", "meta-agent-generator", "skills-security-check"],
             "memory_sections": ["产品工作"],
             "role": "八大",
             "auto_actions": ["load_skill_template"]
@@ -274,7 +274,7 @@ INTENT_SEEDS = [
         "intent_name": "legal_review",
         "pattern_keywords": "合同,条款,法律,合规,法务,协议,SPA,SHA,公司章程,章程,数据隐私,GDPR,跨境,香港法,美国法,中国法,欧盟法",
         "context_bundle": json.dumps({
-            "skills": ["律合-lexbridge-counsel"],
+            "skills": ["lexbridge-legal-counsel"],
             "memory_sections": ["投资研究"],
             "role": "L",
             "auto_actions": ["load_legal_framework"]
@@ -304,6 +304,18 @@ INTENT_SEEDS = [
             "auto_actions": ["reproduce", "isolate", "diagnose"]
         }, ensure_ascii=False),
         "confidence": 0.78
+    },
+    {
+        "id": "intent_system_janitor",
+        "intent_name": "system_janitor",
+        "pattern_keywords": "清理,扫尘,janitor,磁盘空间,缓存,dry-run,熵减,熵增,垃圾,空间不足,磁盘满了,释放空间,系统清理,清理日志,清理缓存,cleaner",
+        "context_bundle": json.dumps({
+            "skills": ["agent-janitor"],
+            "memory_sections": ["工程约定"],
+            "role": "八大",
+            "auto_actions": ["scan_filesystem", "classify_risk", "generate_report"]
+        }, ensure_ascii=False),
+        "confidence": 0.65
     },
 ]
 

@@ -25,6 +25,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -35,6 +36,8 @@ from pathlib import Path
 # ── Constants ────────────────────────────────────────────────
 
 from ..constants import WORKBUDDY_DIR, WORKBUDDY_ROOT, WORKBUDDY_DB_PATH
+
+logger = logging.getLogger(__name__)
 CST = timezone(timedelta(hours=8))
 
 
@@ -48,6 +51,15 @@ def query_sessions() -> list:
     sessions = []
     try:
         conn = sqlite3.connect(str(WORKBUDDY_DB_PATH))
+        # Schema probe: verify sessions table exists before querying
+        table_check = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+        ).fetchone()
+        if not table_check:
+            logger.warning("Table 'sessions' not found in %s", WORKBUDDY_DB_PATH)
+            conn.close()
+            return []
+        
         cursor = conn.execute(
             "SELECT id, cwd, title, status, created_at, updated_at "
             "FROM sessions WHERE deleted_at IS NULL "
@@ -67,7 +79,8 @@ def query_sessions() -> list:
             })
         conn.close()
     except Exception as e:
-        pass
+        logger.error("Failed to query sessions from %s: %s", WORKBUDDY_DB_PATH, e)
+        return []
     
     return sessions
 
@@ -111,7 +124,8 @@ def find_memory_entries() -> list:
                     "title": first_line.replace("# ", ""),
                     "source": "memory_file",
                 })
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to read memory file %s: %s", df, e)
                 continue
     
     return entries

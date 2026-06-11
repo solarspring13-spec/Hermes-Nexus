@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -43,6 +44,8 @@ from ..constants import (
     WEIGHT_TOOL_CALLS, WEIGHT_FILE_OPERATIONS, WEIGHT_ERROR_RECOVERY,
     WEIGHT_SIMILARITY, NORM_TOOL_CALLS, NORM_FILE_OPERATIONS, NORM_ERROR_RECOVERY,
 )
+
+logger = logging.getLogger(__name__)
 
 SKILL_TEMPLATE = """---
 name: {name}
@@ -233,6 +236,16 @@ def detect_tool_patterns(workspace: str) -> list:
     patterns = []
     try:
         conn = sqlite3.connect(str(db_path))
+
+        # Schema probe: verify session_fts table exists
+        table_check = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='session_fts'"
+        ).fetchone()
+        if not table_check:
+            logger.warning("Table 'session_fts' not found in %s", db_path)
+            conn.close()
+            return []
+
         rows = conn.execute(
             "SELECT date, topic, content FROM session_fts"
         ).fetchall()
@@ -252,8 +265,8 @@ def detect_tool_patterns(workspace: str) -> list:
                     "complexity": "high" if len(tool_mentions) >= 5 else "medium",
                 })
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("detect_tool_patterns failed for %s: %s", db_path, e)
 
     return patterns
 

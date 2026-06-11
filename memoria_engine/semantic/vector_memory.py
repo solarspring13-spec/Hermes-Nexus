@@ -169,7 +169,7 @@ class VectorMemoryProvider(MemoryProvider):
             try:
                 self._table.delete(f"id = '{key}'")
             except Exception:
-                pass  # table may not support delete, or entry may not exist
+                logger.debug("Delete before upsert failed for key '%s' (may not exist)", key)
 
             self._table.add(data)
             return True
@@ -242,7 +242,8 @@ class VectorMemoryProvider(MemoryProvider):
                     "timestamp": rows.get("timestamp", [""])[i] if rows.get("timestamp") else "",
                 })
             return entries
-        except Exception:
+        except Exception as e:
+            logger.error("_list_recent failed: %s", e)
             return []
 
     def close(self) -> None:
@@ -257,7 +258,8 @@ class VectorMemoryProvider(MemoryProvider):
         self._ensure_connection()
         try:
             return self._table.to_lance().count_rows()
-        except Exception:
+        except Exception as e:
+            logger.error("count failed: %s", e)
             return 0
 
 

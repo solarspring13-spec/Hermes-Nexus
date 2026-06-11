@@ -915,6 +915,41 @@ def get_index_status(workspace: str) -> dict:
     }
 
 
+# ── FTS5 Optimize ────────────────────────────────────────────
+
+def optimize_fts(db_path: Path) -> dict:
+    """Merge FTS5 segments to reclaim space and improve query performance.
+
+    Uses SQLite's native FTS5 optimize command: INSERT INTO <fts>(<fts>) VALUES('optimize').
+    Idempotent, zero new dependencies, safe to run on any FTS5 table.
+    """
+    if not db_path.exists():
+        return {"status": "skipped", "reason": "database_not_found", "path": str(db_path)}
+
+    conn = sqlite3.connect(str(db_path))
+    tables = [row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_fts'"
+    ).fetchall()]
+
+    optimized = []
+    for table in tables:
+        try:
+            conn.execute(f"INSERT INTO {table}({table}) VALUES('optimize')")
+            optimized.append(table)
+        except sqlite3.OperationalError as e:
+            pass  # table might not support optimize
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "tables_optimized": optimized,
+        "count": len(optimized),
+        "path": str(db_path),
+    }
+
+
 # ── CLI ───────────────────────────────────────────────────────
 
 def main():
@@ -941,12 +976,36 @@ def main():
                         help="Output as JSON")
     parser.add_argument("--no-cache", action="store_true",
                         help="Bypass context cache (force fresh search)")
+    parser.add_argument("--optimize", action="store_true",
+                        help="Merge FTS5 segments to reclaim space and improve search performance")
 
     args = parser.parse_args()
 
     # Validate: --workspace or --global must be provided
     if not args.workspace and not args.global_mode and not args.shared:
         parser.error("either --workspace or --global (or --shared) is required")
+
+    # ── Optimize only ──
+    if args.optimize:
+        if args.global_mode:
+            db_path = get_global_db_path()
+        elif args.shared:
+            db_path = Path.home() / ".workbuddy" / "shared_memory" / "shared_index.db"
+        elif args.workspace:
+            db_path = get_db_path(args.workspace)
+        else:
+            parser.error("--optimize requires --workspace, --global, or --shared to target a specific index")
+
+        result = optimize_fts(db_path)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(f"📊 FTS5 Optimize: {result['status']}")
+            if result['status'] == 'ok':
+                print(f"   Tables optimized: {result['tables_optimized']}")
+                print(f"   Count:            {result['count']}")
+            print(f"   Path:             {result['path']}")
+        return
 
     # ── Global mode ──
     if args.global_mode:

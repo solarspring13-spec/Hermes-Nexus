@@ -85,6 +85,11 @@ PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+# ── FTS5 Optimize Cycle Counter ─────────────────────────────
+
+_OPTIMIZE_INTERVAL = 6  # optimize every 6th cycle (~3 hours at 30min interval)
+_cycle_counter = 0
+
 # ── Helpers ───────────────────────────────────────────────────
 
 def log(msg: str):
@@ -571,6 +576,21 @@ def run_cycle(is_background: bool = False) -> dict:
             "returncode": rc,
             "output": stdout.strip() if rc == 0 else stderr.strip(),
         }
+
+    # FTS5 Optimize: merge segments every N cycles (reclaim space, improve query perf)
+    global _cycle_counter
+    _cycle_counter += 1
+    if _cycle_counter % _OPTIMIZE_INTERVAL == 0:
+        rc, stdout, stderr = run_script("memory_index.py", [
+            "--global", "--optimize", "--json"
+        ])
+        result["fts5_optimize"] = {
+            "cycle": _cycle_counter,
+            "interval": _OPTIMIZE_INTERVAL,
+            "returncode": rc,
+            "output": stdout.strip()[:120] if rc == 0 else stderr.strip()[:120],
+        }
+        log(f"FTS5 Optimize (cycle {_cycle_counter}/{_OPTIMIZE_INTERVAL}): {'OK' if rc == 0 else 'ERROR'}")
 
     # Off-session review: when no active session, check for memory gaps
     if not session_active:

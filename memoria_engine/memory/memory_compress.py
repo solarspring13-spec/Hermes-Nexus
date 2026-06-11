@@ -53,18 +53,24 @@ from ..constants import (
 # ── File Operations ──────────────────────────────────────────
 
 def get_memory_files(workspace: str) -> dict:
-    """Locate memory files for the workspace."""
-    base = Path(workspace) / MEMORY_DIR
+    """Locate memory files.
+
+    Canonical L2 (2026-05-29): {MEMORIA_HOME} is the single source of truth.
+    Workspace-level memory is in <ws>/.workbuddy/memory/YYYY-MM-DD.md (daily logs),
+    not in a separate MEMORY.md. No workspace preference for global L2.
+    """
     result = {
-        "memory_path": base / "MEMORY.md",
-        "user_path": base / "USER.md",
+        "memory_path": WORKBUDDY_DIR / "MEMORY.md",
+        "user_path": WORKBUDDY_DIR / "USER.md",
     }
 
-    # Also check global {MEMORIA_HOME} if not found in workspace
-    if not result["memory_path"].exists():
-        result["memory_path"] = WORKBUDDY_DIR / "MEMORY.md"
-    if not result["user_path"].exists():
-        result["user_path"] = WORKBUDDY_DIR / "USER.md"
+    # Workspace daily log (not L2 — informational only)
+    ws_memory = Path(workspace) / MEMORY_DIR / "MEMORY.md"
+    if ws_memory.exists():
+        # Workspace MEMORY.md is retired per L2 consolidation.
+        # Only read if root MEMORY.md is missing (degraded fallback).
+        if not result["memory_path"].exists():
+            result["memory_path"] = ws_memory
 
     return result
 
@@ -278,6 +284,7 @@ P0_KEYWORDS = [
     "永远禁止", "绝对不能", "身份", "安全", "密码", "credentials",
     "核心偏好", "关键决策", "架构", "P0", "CRITICAL", "MUST",
     "git config", "submodule", "API Key", "token", "secret",
+    "验收", "强制输出", "硬约束", "输出格式", "规范",
 ]
 P1_KEYWORDS = [
     "偏好", "风格", "常用", "近期", "当前关注", "进行中",
@@ -416,6 +423,13 @@ def smart_compress_content(content: str, target_chars: int, protect_first: int =
             "reasons": reasons,
             "length": len(entry),
         })
+    
+    # Permanent mark detection: entries with <!-- permanent --> are unconditionally P0
+    for s in scored:
+        if "<!-- permanent -->" in s["entry"]:
+            s["score"] += 100
+            s["priority"] = "P0"
+            s["reasons"].append("permanent_marker")
     
     # Sort: P0 first, then P1 by score desc, then P2
     priority_order = {"P0": 0, "P1": 1, "P2": 2}

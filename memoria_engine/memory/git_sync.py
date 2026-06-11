@@ -32,12 +32,13 @@ TRACK_PATTERNS = [
     "SOUL.md",
     "IDENTITY.md",
     "USER.md",
+    "MEMORY.md",
     "skills/",
-    "settings.json",
+    # settings.json removed from tracking 2026-05-29 — contains plaintext secrets, now gitignored
     "mcp.json",
     "models.json",
     "memory/",
-    "memery/",
+    # memery/ retired on 2026-05-29 — archived, not tracked
     "argv.json",
 ]
 

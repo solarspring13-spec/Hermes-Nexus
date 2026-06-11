@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -30,6 +31,8 @@ from ..memory.memory_pool import _load_pool, SHARED_DIR
 # ── Constants ────────────────────────────────────────────────
 
 from ..constants import WORKBUDDY_ROOT, DEFAULT_ROUTE_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 # Chinese stop words (common words that don't carry topic signal)
 CN_STOP_WORDS = {
@@ -117,7 +120,8 @@ def _get_workspace_topics(workspace: str) -> list:
     try:
         content = memory_path.read_text(encoding="utf-8")
         return suggest_topics(content)
-    except Exception:
+    except (OSError, UnicodeDecodeError) as e:
+        logger.error("Failed to read workspace topics from %s: %s", memory_path, e)
         return []
 
 

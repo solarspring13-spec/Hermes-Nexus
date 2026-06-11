@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- RUNTIME: {MEMORIA_HOME} -*-
+# numpy C-ext 在 managed 3.13.12 存在 macOS Team ID 签名冲突，专用 venv (3.11) 解决
 """
 Semantic Embedding Pipeline — Multi-Backend + SHA256 Cache
 ===========================================================

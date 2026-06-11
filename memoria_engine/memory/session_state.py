@@ -56,6 +56,7 @@ Usage:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -324,13 +325,69 @@ def get_summary(workspace: str) -> str:
     return "\n".join(lines)
 
 
-def distill_to_l1(workspace: str, auto: bool = False) -> str | None:
+# ── Session Lock (Concurrent Fork Prevention) ──────────────────
+
+def _lock_path(workspace: str) -> Path:
+    """Return the lock file path for a given workspace."""
+    return Path(workspace) / ".workbuddy" / "memory" / ".session.lock"
+
+
+def acquire_session_lock(workspace: str) -> int | None:
+    """Acquire an exclusive fcntl.flock on the session state.
+
+    Returns the file descriptor on success, or None if the lock is held
+    by another process.  fcntl.flock is kernel-level — the lock is
+    automatically released when the process exits, even on crash.
+    """
+    lock_file = _lock_path(workspace)
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_file), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.write(fd, str(os.getpid()).encode())
+        return fd
+    except BlockingIOError:
+        os.close(fd)
+        return None
+
+
+def release_session_lock(fd: int | None, workspace: str = ""):
+    """Release the fcntl.flock and close the file descriptor."""
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except Exception:
+        pass
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+
+
+def distill_to_l1(workspace: str, auto: bool = False, _lock: bool = True) -> str | None:
     """Distill L0 session state into L1 daily log.
 
-    Generates a structured daily log entry from session facts, decisions,
-    and task completions. Returns the generated entry text, or None if
-    nothing to distill.
+    Protected by fcntl.flock to prevent concurrent session-id forks.
+    Set _lock=False when the caller already holds the session lock
+    (e.g. close_session wrapping distill+close atomically).
     """
+    if _lock:
+        lock_fd = acquire_session_lock(workspace)
+        if lock_fd is None:
+            print("LOCK_CONFLICT: Another process is distilling this session.", file=sys.stderr)
+            return None
+        try:
+            return _distill_to_l1_impl(workspace, auto)
+        finally:
+            release_session_lock(lock_fd, workspace)
+    else:
+        return _distill_to_l1_impl(workspace, auto)
+
+
+def _distill_to_l1_impl(workspace: str, auto: bool = False) -> str | None:
+    """Inner implementation of distill — called while holding the session lock."""
     state = load_session(workspace)
     if state is None:
         print("No active session to distill.", file=sys.stderr)
@@ -430,28 +487,38 @@ def distill_to_l1(workspace: str, auto: bool = False) -> str | None:
 
 
 def close_session(workspace: str, reason: str = "normal") -> dict:
-    """Close current session. Archives state and marks closed."""
-    state = load_session(workspace)
-    if state is None:
-        return {"status": "no_active_session"}
+    """Close current session. Archives state and marks closed.
 
-    # Auto-distill if not done
-    if not state.get("distilled_to_l1"):
-        print("⚠️  Session not yet distilled. Running distill...", file=sys.stderr)
-        distill_to_l1(workspace, auto=True)
+    Protected by fcntl.flock — the entire close+distill operation is atomic.
+    """
+    lock_fd = acquire_session_lock(workspace)
+    if lock_fd is None:
+        return {"status": "lock_conflict", "reason": "Another process is closing this session"}
 
-    state["closed"] = True
-    state["closed_at"] = _now_iso()
-    state["close_reason"] = reason
-    _save(workspace, state)
+    try:
+        state = load_session(workspace)
+        if state is None:
+            return {"status": "no_active_session"}
 
-    # Archive
-    _archive_session(workspace, state)
+        # Auto-distill if not done (passes _lock=False — we already hold the lock)
+        if not state.get("distilled_to_l1"):
+            print("⚠️  Session not yet distilled. Running distill...", file=sys.stderr)
+            distill_to_l1(workspace, auto=True, _lock=False)
 
-    # Remove active session file
-    _session_path(workspace).unlink(missing_ok=True)
+        state["closed"] = True
+        state["closed_at"] = _now_iso()
+        state["close_reason"] = reason
+        _save(workspace, state)
 
-    return {"status": "closed", "reason": reason, "session_id": state["session_id"]}
+        # Archive
+        _archive_session(workspace, state)
+
+        # Remove active session file
+        _session_path(workspace).unlink(missing_ok=True)
+
+        return {"status": "closed", "reason": reason, "session_id": state["session_id"]}
+    finally:
+        release_session_lock(lock_fd, workspace)
 
 
 def _archive_session(workspace: str, state: dict) -> None:

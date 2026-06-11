@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import re
 import sqlite3
 import sys
@@ -38,6 +39,8 @@ from ..constants import (
     WORKBUDDY_ROOT, SCRIPTS_DIR, DB_PATH,
     MIN_SEQUENCE_LENGTH, MIN_PATTERN_FREQ,
 )
+
+logger = logging.getLogger(__name__)
 
 # Tool names to detect in session logs (as they appear in daily logs)
 TOOL_PATTERNS = [
@@ -112,6 +115,16 @@ def extract_sequences(workspace: str) -> list:
     sequences = []
     try:
         conn = sqlite3.connect(str(db_path))
+
+        # Schema probe: verify session_fts table exists
+        table_check = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='session_fts'"
+        ).fetchone()
+        if not table_check:
+            logger.warning("Table 'session_fts' not found in %s", db_path)
+            conn.close()
+            return []
+
         rows = conn.execute(
             "SELECT date, topic, content FROM session_fts"
         ).fetchall()
@@ -127,8 +140,8 @@ def extract_sequences(workspace: str) -> list:
                     "length": len(tools),
                 })
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("extract_sequences failed for %s: %s", db_path, e)
 
     return sequences
 
@@ -516,6 +529,16 @@ def discover_intents(days: int = 14) -> dict:
     
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
+
+    # Schema probe: verify required tables exist
+    tables = set(r["name"] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall())
+    missing = [t for t in ("query_signatures", "intent_patterns") if t not in tables]
+    if missing:
+        logger.warning("Missing tables in %s: %s", db_path, ", ".join(missing))
+        conn.close()
+        return {"error": f"missing tables: {missing}", "candidates": [], "unmatched_count": 0}
     
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     

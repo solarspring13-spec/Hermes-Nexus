@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# -*- RUNTIME: {MEMORIA_HOME} -*-
+# numpy C-ext 在 managed 3.13.12 存在 macOS Team ID 签名冲突，专用 venv (3.11) 解决
+# 调用方式: {MEMORIA_HOME} intent_learner.py [args]
 """
 Intent Learner — Hermes Intent Awareness Engine
 =================================================
@@ -168,6 +171,349 @@ def _keyword_hit_ratio(query: str, pattern_keywords_str: str) -> float:
     return min(hit_weight / effective_total, 1.0)
 
 
+# ── B+5a Post-Match Lexical Override Rules ──────────────────
+# Added per CTO B+5-production authorization (2026-06-04).
+# These rules fix known FP patterns that LanceDB semantic matching cannot
+# distinguish due to vector space overlap. Rules are purely lexical — no
+# LanceDB access, no DB mutation.
+#
+# Rule precedence: Rule 1 > 2 > 3 > 4 > 5 > 6 > 7 (order-sensitive; first match wins).
+
+def _lookup_intent_by_name(intent_name: str) -> dict:
+    """Look up intent metadata by name from the DB.
+
+    Used by _post_match_rules() to fetch context_bundle and intent_id
+    when a lexical rule overrides the matched intent to one that may
+    not be in the candidate list.
+
+    Returns empty dict if intent not found or DB unavailable.
+    """
+    try:
+        conn = _get_db()
+        row = conn.execute(
+            "SELECT * FROM intent_patterns WHERE intent_name = ?",
+            (intent_name,)
+        ).fetchone()
+        conn.close()
+        if row:
+            return {
+                "intent_name": row["intent_name"],
+                "intent_id": row["id"],
+                "base_confidence": row["confidence"],
+                "context_bundle": json.loads(row["context_bundle"]) if row["context_bundle"] else {},
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _post_match_rules(query: str, result: dict) -> dict:
+    """B+5 post-match lexical override rules.
+
+    Applies 7 ordered lexical rules to correct known FP/FN patterns where
+    LanceDB semantic matching produces wrong intent due to vector space
+    overlap. Each rule checks explicit lexical signals in the query and
+    overrides/re-ranks the matched intent accordingly.
+
+    Args:
+        query: Original user query string.
+        result: Result dict from match_intent() / _hybrid_match_intent().
+
+    Returns:
+        Modified result dict. If a rule fires, intent_name, intent_id,
+        confidence, context_bundle, and match_level may be overridden.
+        A ``post_rule`` key is added to indicate which rule fired.
+        When no rule fires, the original result is returned unchanged.
+
+    Guardrails:
+        - Does NOT access LanceDB or modify any database.
+        - Does NOT add new intent categories (general_qa / glossary_lookup).
+        - Does NOT implement no-match threshold or confidence-based rejection.
+        - Rule 1 anti-collision prevents skill_create from absorbing
+          system_architect queries with explicit architecture signals.
+    """
+    query_lower = query.lower()
+
+    # ── Rule 1: skill_create lexical override ──────────────────
+    # Pattern: creation verbs + skill/agent nouns → skill_create.
+    # Anti-collision: presence of system_architect-specific terms
+    # (architecture, interface, module boundary, blueprint, daemon, MCP)
+    # prevents this override — "创建MCP架构" stays system_architect.
+    #
+    # Fixes FP: "帮我创建一个新的Skill" → skill_create (was system_architect)
+    # Fixes FP: "生成一个新的能力组件" → skill_create (was system_architect)
+    # Fixes FP: "这个工作流帮我固化成Skill" → skill_create (was system_architect)
+
+    sc_verb_set = {
+        "创建", "生成", "固化", "新建", "写一个", "做一个", "做个",
+        "搞个", "弄个"
+    }
+    sc_noun_set = {
+        "skill", "技能", "能力组件", "agent", "prompt", "工作流",
+        "固化成", "做成skill", "变成skill", "skill.md",
+        "自动化", "组件", "工具"
+    }
+    # system_architect anti-collision: these terms signal genuine architecture
+    # work, NOT skill creation — do NOT override to skill_create
+    sa_anti_set = {
+        "架构", "接口", "模块边界", "系统设计", "蓝图", "白皮书",
+        "守护进程", "解耦", "mcp架构", "组件化", "core/", "agents/"
+    }
+
+    has_sc_verb = any(v in query_lower for v in sc_verb_set)
+    has_sc_noun = any(n in query_lower for n in sc_noun_set)
+    has_sa_anti = any(s in query_lower for s in sa_anti_set)
+
+    if has_sc_verb and has_sc_noun and not has_sa_anti:
+        info = _lookup_intent_by_name("skill_create")
+        if info:
+            result["intent_name"] = info["intent_name"]
+            result["intent_id"] = info["intent_id"]
+            result["confidence"] = 0.85
+            result["context_bundle"] = info["context_bundle"]
+            result["match_level"] = "high"
+            result["post_rule"] = "rule_1_skill_create"
+            return result
+
+    # ── Rule 2: memory_review lexical override ─────────────────
+    # Pattern: retrospective time words + target reference → memory_review.
+    # These are retrieval/recall queries that LanceDB routes to system_architect
+    # because of shared vocabulary ("架构", "Hermes", "项目").
+    #
+    # Fixes FP: "上次我们讨论的架构变更是什么" → memory_review (was system_architect)
+    # Fixes FP: "Hermes里有没有记录那个项目" → memory_review (was system_architect)
+
+    mr_time_set = {
+        "上次", "之前", "还记得", "记录", "回忆", "有没有记录",
+        "记不记得", "之前聊", "之前说", "之前讨论", "提到过", "说过"
+    }
+    mr_target_set = {
+        "讨论", "项目", "架构变更", "hermes", "那个项目", "那个任务",
+        "那个", "那件事", "任务", "工作"
+    }
+
+    has_mr_time = any(t in query_lower for t in mr_time_set)
+    has_mr_target = any(t in query_lower for t in mr_target_set)
+
+    if has_mr_time and has_mr_target:
+        info = _lookup_intent_by_name("memory_review")
+        if info:
+            result["intent_name"] = info["intent_name"]
+            result["intent_id"] = info["intent_id"]
+            result["confidence"] = 0.80
+            result["context_bundle"] = info["context_bundle"]
+            result["match_level"] = "high"
+            result["post_rule"] = "rule_2_memory_review"
+            return result
+
+    # ── Rule 3: legal_review vs investment_dd tiebreaker ──────
+    # In L-role context (CVC/strategic investment), SPA protocol review
+    # is part of due diligence work, not standalone legal affairs.
+    #
+    # Direction A (legal → investment): query has investment signals
+    #   (SPA/SHA/投资协议/尽调/DD/交割/估值/融资/对赌/deal)
+    #   AND lacks pure legal keywords → re-rank to investment_dd.
+    #
+    # Direction B (investment → legal): query has ONLY pure legal
+    #   keywords (违约/赔偿/管辖/仲裁/不可抗力/GDPR)
+    #   AND lacks investment signals → re-rank to legal_review.
+    #
+    # Fixes FP: "审查这份SPA协议的关键条款" → investment_dd (was legal_review)
+
+    best_intent = result.get("intent_name")
+
+    invest_signal_set = {
+        "spa", "sha", "投资协议", "尽调", "dd", "交割", "估值",
+        "融资", "对赌", "回购", "优先权", "反稀释", "deal",
+        "尽调报告", "bp", "term sheet", "termsheet"
+    }
+    pure_legal_set = {
+        "违约", "赔偿", "管辖", "仲裁", "不可抗力", "gdpr",
+        "数据隐私", "知识产权", "专利", "商标"
+    }
+
+    has_invest = any(t in query_lower for t in invest_signal_set)
+    has_pure_legal = any(t in query_lower for t in pure_legal_set)
+
+    # Direction A: legal_review → investment_dd
+    if best_intent == "legal_review" and has_invest and not has_pure_legal:
+        info = _lookup_intent_by_name("investment_dd")
+        if info:
+            result["intent_name"] = info["intent_name"]
+            result["intent_id"] = info["intent_id"]
+            result["confidence"] = max(result.get("confidence", 0.0), 0.75)
+            result["context_bundle"] = info["context_bundle"]
+            result["match_level"] = "high"
+            result["post_rule"] = "rule_3_investment_dd_tiebreaker"
+            return result
+
+    # Direction B: investment_dd → legal_review
+    # Enhanced: also override when query has strong legal focus terms
+    # even if SPA/SHA/document-type terms are present — when the query's
+    # primary intent is legal review (审查/审阅/法律风险), not investment
+    # decision-making (尽调/DD/估值/交割).
+    legal_focus_set = {
+        "法律风险", "合规风险", "法律合规", "法律审查",
+        "法律意见", "法务"
+    }
+    has_legal_focus = any(t in query_lower for t in legal_focus_set)
+    invest_decision_set = {
+        "尽调", "dd", "估值", "交割", "融资轮次", "deal",
+        "尽调报告", "投资决策", "投委会"
+    }
+    has_invest_decision = any(t in query_lower for t in invest_decision_set)
+
+    if best_intent == "investment_dd" and (
+        (has_pure_legal and not has_invest) or
+        (has_legal_focus and not has_invest_decision)
+    ):
+        info = _lookup_intent_by_name("legal_review")
+        if info:
+            result["intent_name"] = info["intent_name"]
+            result["intent_id"] = info["intent_id"]
+            result["confidence"] = max(result.get("confidence", 0.0), 0.75)
+            result["context_bundle"] = info["context_bundle"]
+            result["match_level"] = "high"
+            result["post_rule"] = "rule_3_legal_review_tiebreaker"
+            return result
+
+    # ── Rule 4: code_debug positive boundary constraint ───────
+    # code_debug MUST have explicit debugging/error signal words.
+    # Without these signals, even if LanceDB returns code_debug as the
+    # best match, downgrade to no-match. This prevents absorption of
+    # generic knowledge queries like "什么是机器学习"/"Token是什么意思".
+    #
+    # Also: if best match is NOT code_debug but the query contains
+    # strong code-fix signals, override to code_debug.
+    #
+    # Fixes FP (boundary): "Token是什么意思" → no_match
+    # Fixes FP (boundary): "什么是机器学习" → no_match
+
+    debug_signal_set = {
+        "报错", "错误", "bug", "调试", "修复", "配置出错", "运行失败",
+        "栈", "traceback", "崩溃", "异常", "debug", "修一下",
+        "不好使", "不work", "不工作", "出错", "挂了", "失败",
+        "怎么配置", "配置"
+    }
+
+    has_debug_signal = any(d in query_lower for d in debug_signal_set)
+
+    if best_intent == "code_debug" and not has_debug_signal:
+        # No debugging signal → this match is likely spurious;
+        # the query is probably a generic knowledge or concept question.
+        result["intent_name"] = None
+        result["intent_id"] = None
+        result["confidence"] = 0.0
+        result["match_level"] = "low"
+        result["post_rule"] = "rule_4_code_debug_boundary_downgrade"
+        return result
+
+    if best_intent and best_intent != "code_debug" and has_debug_signal:
+        # Query has debugging signals but was routed elsewhere.
+        # Check for strong code-fix context before overriding.
+        strong_debug = {"报错", "bug", "traceback", "崩溃", "调试", "debug",
+                        "修复", "修一下", "不好使", "不work", "不工作"}
+        has_strong = any(d in query_lower for d in strong_debug)
+        if has_strong:
+            info = _lookup_intent_by_name("code_debug")
+            if info:
+                result["intent_name"] = info["intent_name"]
+                result["intent_id"] = info["intent_id"]
+                result["confidence"] = 0.82
+                result["context_bundle"] = info["context_bundle"]
+                result["match_level"] = "high"
+                result["post_rule"] = "rule_4_code_debug_override"
+                return result
+
+    # ── Rule 5: system_architect positive boundary constraint ──
+    # Mirror of Rule 4: system_architect MUST have explicit
+    # architectural/design signal words. Without these signals,
+    # the match is likely a LanceDB false positive on generic
+    # knowledge/concept queries (e.g., "什么是机器学习", "Token是什么").
+    #
+    # This rule complements Rule 1's anti-collision set: Rule 1 prevents
+    # skill_create queries from being absorbed by system_architect;
+    # Rule 5 prevents non-architectural queries from matching
+    # system_architect at all.
+    #
+    # Fixes FP: "什么是机器学习" → no_match (was system_architect)
+    # Fixes FP: "Token是什么意思" → no_match (was system_architect)
+    # Fixes FP: "怎么优化SQL查询性能" → no_match (was system_architect)
+    # Fixes FP: "什么是大语言模型" → no_match (was system_architect)
+
+    sa_positive_set = {
+        "架构", "设计", "系统设计", "蓝图", "白皮书",
+        "解耦", "守护进程", "模块边界", "接口",
+        "agent系统", "agent架构", "mcp架构", "skill架构",
+        "workbuddy架构", "hermes架构", "core/", "agents/"
+    }
+
+    has_sa_positive = any(s in query_lower for s in sa_positive_set)
+
+    if best_intent == "system_architect" and not has_sa_positive:
+        result["intent_name"] = None
+        result["intent_id"] = None
+        result["confidence"] = 0.0
+        result["match_level"] = "low"
+        result["post_rule"] = "rule_5_system_architect_boundary_downgrade"
+        return result
+
+    # ── Rule 6: memory_review positive boundary constraint ──
+    # Mirror of Rule 4/5: memory_review MUST have explicit
+    # recollection/history/record signal words. Without these signals,
+    # the match is likely a LanceDB false positive on casual small-talk
+    # (e.g., "今天天气怎么样", "帮我写一首诗").
+    #
+    # Fixes FP: "今天天气怎么样" → no_match (was memory_review)
+    # Fixes FP: "帮我写一首诗" → no_match (was memory_review)
+
+    mr_positive_set = {
+        "上次", "之前", "还记得", "回忆", "记录", "讨论过",
+        "我们聊过", "hermes里有没有记录", "以前", "历史",
+    }
+
+    has_mr_positive = any(s in query_lower for s in mr_positive_set)
+
+    if best_intent == "memory_review" and not has_mr_positive:
+        result["intent_name"] = None
+        result["intent_id"] = None
+        result["confidence"] = 0.0
+        result["match_level"] = "low"
+        result["post_rule"] = "rule_6_memory_review_boundary_downgrade"
+        return result
+
+    # ── Rule 7: travel_plan city route anchor ──
+    # City-to-city route queries ("A到B怎么走") should match travel_plan,
+    # even if the core engine returns None. This is a safety-net override
+    # for the pre-existing core engine limitation that misses these patterns.
+    #
+    # Fixes FN: "北京到上海怎么走" → travel_plan (was no_match)
+
+    import re as _re_route
+    route_pattern = _re_route.compile(r'.+到.+怎么走|.+到.+路线|.+去.+怎么走')
+
+    has_route_pattern = bool(route_pattern.search(query_lower))
+    # Anti-collision: don't override if query has strong code/debug/system signals
+    code_debug_system_keywords = {
+        "代码", "bug", "报错", "异常", "debug", "调试",
+        "架构", "系统设计", "模块", "接口设计"
+    }
+    has_cds_keywords = any(k in query_lower for k in code_debug_system_keywords)
+
+    if best_intent is None and has_route_pattern and not has_cds_keywords:
+        info = _lookup_intent_by_name("travel_plan")
+        if info:
+            result["intent_name"] = "travel_plan"
+            result["intent_id"] = info["intent_id"]
+            result["confidence"] = 0.85
+            result["match_level"] = "high"
+            result["post_rule"] = "rule_7_travel_route_anchor"
+            return result
+
+    # No rule fired — return original result unchanged
+    return result
+
+
 def _semantic_similarity(query: str, pattern_keywords_str: str) -> float:
     """Calculate semantic similarity between query and intent pattern using BGE-M3.
 
@@ -292,67 +638,71 @@ def _hybrid_match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE) 
     # Stage 1: Keyword matching
     kw_result = match_intent(query, min_confidence=LOW_CONFIDENCE, mode="keyword")
 
-    # If keyword gave a real match (any confidence > 0), return it
+    # If keyword gave a real match (any confidence > 0), use it
     if kw_result["match_level"] != "low":
         kw_result["mode"] = "hybrid"
         kw_result["fallback_used"] = False
-        return kw_result
-
-    # Stage 2: LanceDB semantic fallback
-    lance_matches = _lancedb_semantic_match(query, top_k=3)
-    if not lance_matches:
-        # No LanceDB index available, return keyword result as-is
-        kw_result["mode"] = "hybrid"
-        kw_result["fallback_used"] = False
-        kw_result["fallback_reason"] = "lancedb_unavailable"
-        return kw_result
-
-    # Convert LanceDB matches to candidate format
-    candidates = []
-    for m in lance_matches:
-        sim = m["similarity"]
-        base_conf = m.get("base_confidence", 0.5)
-        raw_score = sim * base_conf
-        candidates.append({
-            "intent_name": m["intent_name"],
-            "id": m["intent_id"],
-            "hit_ratio": round(sim, 4),
-            "raw_score": round(raw_score, 4),
-            "base_confidence": base_conf,
-            "hit_count": 0,
-            "context_bundle": m["context_bundle"],
-        })
-
-    candidates.sort(key=lambda x: x["raw_score"], reverse=True)
-
-    if not candidates or candidates[0]["raw_score"] < min_confidence:
-        return {
-            "intent_name": None,
-            "confidence": 0.0,
-            "context_bundle": {},
-            "match_level": "low",
-            "candidates": candidates[:3] + kw_result.get("candidates", [])[:3],
-            "mode": "hybrid",
-            "fallback_used": True,
-            "fallback_reason": "confidence_too_low" if candidates else "no_matches",
-        }
-
-    best = candidates[0]
-    if best["raw_score"] >= HIGH_CONFIDENCE:
-        level = "high"
+        hybrid_result = kw_result
     else:
-        level = "medium"
+        # Stage 2: LanceDB semantic fallback
+        lance_matches = _lancedb_semantic_match(query, top_k=3)
+        if not lance_matches:
+            # No LanceDB index available, return keyword result as-is
+            kw_result["mode"] = "hybrid"
+            kw_result["fallback_used"] = False
+            kw_result["fallback_reason"] = "lancedb_unavailable"
+            hybrid_result = kw_result
+        else:
+            # Convert LanceDB matches to candidate format
+            candidates = []
+            for m in lance_matches:
+                sim = m["similarity"]
+                base_conf = m.get("base_confidence", 0.5)
+                raw_score = sim * base_conf
+                candidates.append({
+                    "intent_name": m["intent_name"],
+                    "id": m["intent_id"],
+                    "hit_ratio": round(sim, 4),
+                    "raw_score": round(raw_score, 4),
+                    "base_confidence": base_conf,
+                    "hit_count": 0,
+                    "context_bundle": m["context_bundle"],
+                })
 
-    return {
-        "intent_name": best["intent_name"],
-        "intent_id": best["id"],
-        "confidence": best["raw_score"],
-        "context_bundle": best["context_bundle"],
-        "match_level": level,
-        "candidates": candidates[:3],
-        "mode": "hybrid",
-        "fallback_used": True,
-    }
+            candidates.sort(key=lambda x: x["raw_score"], reverse=True)
+
+            if not candidates or candidates[0]["raw_score"] < min_confidence:
+                hybrid_result = {
+                    "intent_name": None,
+                    "confidence": 0.0,
+                    "context_bundle": {},
+                    "match_level": "low",
+                    "candidates": candidates[:3] + kw_result.get("candidates", [])[:3],
+                    "mode": "hybrid",
+                    "fallback_used": True,
+                    "fallback_reason": "confidence_too_low" if candidates else "no_matches",
+                }
+            else:
+                best = candidates[0]
+                if best["raw_score"] >= HIGH_CONFIDENCE:
+                    level = "high"
+                else:
+                    level = "medium"
+
+                hybrid_result = {
+                    "intent_name": best["intent_name"],
+                    "intent_id": best["id"],
+                    "confidence": best["raw_score"],
+                    "context_bundle": best["context_bundle"],
+                    "match_level": level,
+                    "candidates": candidates[:3],
+                    "mode": "hybrid",
+                    "fallback_used": True,
+                }
+
+    # B+5: Apply post-match lexical override rules
+    hybrid_result = _post_match_rules(query, hybrid_result)
+    return hybrid_result
 
 
 def _recency_factor(last_matched: str) -> float:
@@ -395,6 +745,7 @@ def match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE,
         match_level: "high" (>0.65), "medium" (0.3-0.65), "low" (<0.3)
     """
     # Phase 2: hybrid mode delegates to _hybrid_match_intent
+    # (which already applies _post_match_rules internally)
     if mode == "hybrid":
         return _hybrid_match_intent(query, min_confidence=min_confidence)
 
@@ -406,7 +757,7 @@ def match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE,
     conn.close()
 
     if not rows:
-        return {
+        match_result = {
             "intent_name": None,
             "confidence": 0.0,
             "context_bundle": {},
@@ -414,6 +765,8 @@ def match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE,
             "candidates": [],
             "mode": mode,
         }
+        match_result = _post_match_rules(query, match_result)
+        return match_result
 
     # Determine matcher function
     use_semantic = (mode == "semantic" and _check_semantic_available())
@@ -446,7 +799,7 @@ def match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE,
     candidates.sort(key=lambda x: x["raw_score"], reverse=True)
 
     if not candidates or candidates[0]["raw_score"] < min_confidence:
-        return {
+        match_result = {
             "intent_name": None,
             "confidence": 0.0,
             "context_bundle": {},
@@ -454,22 +807,26 @@ def match_intent(query: str, min_confidence: float = MEDIUM_CONFIDENCE,
             "candidates": candidates[:3],
             "mode": mode,
         }
-
-    best = candidates[0]
-    if best["raw_score"] >= HIGH_CONFIDENCE:
-        level = "high"
     else:
-        level = "medium"
+        best = candidates[0]
+        if best["raw_score"] >= HIGH_CONFIDENCE:
+            level = "high"
+        else:
+            level = "medium"
 
-    return {
-        "intent_name": best["intent_name"],
-        "intent_id": best["id"],
-        "confidence": best["raw_score"],
-        "context_bundle": best["context_bundle"],
-        "match_level": level,
-        "candidates": candidates[:3],
-        "mode": mode,
-    }
+        match_result = {
+            "intent_name": best["intent_name"],
+            "intent_id": best["id"],
+            "confidence": best["raw_score"],
+            "context_bundle": best["context_bundle"],
+            "match_level": level,
+            "candidates": candidates[:3],
+            "mode": mode,
+        }
+
+    # B+5: Apply post-match lexical override rules
+    match_result = _post_match_rules(query, match_result)
+    return match_result
 
 
 # ── Preload ───────────────────────────────────────────────────
@@ -541,9 +898,20 @@ def record_feedback(intent_id: str, status: str, query: str = "",
     
     # Update intent pattern
     if intent_id and intent_id != "none":
-        existing = conn.execute(
-            "SELECT * FROM intent_patterns WHERE id = ?", (intent_id,)
-        ).fetchone()
+        # Auto-prefix: accept both "stock_quick_check" and "intent_stock_quick_check"
+        lookup_ids = [intent_id]
+        if not intent_id.startswith("intent_"):
+            lookup_ids.append(f"intent_{intent_id}")
+        
+        existing = None
+        matched_id = intent_id
+        for lid in lookup_ids:
+            existing = conn.execute(
+                "SELECT * FROM intent_patterns WHERE id = ?", (lid,)
+            ).fetchone()
+            if existing:
+                matched_id = lid
+                break
         
         if existing:
             new_hits = existing["hit_count"] + (1 if status == "hit" else 0)
@@ -561,11 +929,11 @@ def record_feedback(intent_id: str, status: str, query: str = "",
                    SET hit_count = ?, miss_count = ?, confidence = ?,
                        last_matched = ?, updated_at = ?
                    WHERE id = ?""",
-                (new_hits, new_misses, round(new_conf, 4), now, now, intent_id)
+                (new_hits, new_misses, round(new_conf, 4), now, now, matched_id)
             )
             
             result = {
-                "intent_id": intent_id,
+                "intent_id": matched_id,
                 "intent_name": existing["intent_name"],
                 "old_confidence": existing["confidence"],
                 "new_confidence": round(new_conf, 4),
