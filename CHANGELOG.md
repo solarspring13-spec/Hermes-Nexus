@@ -139,6 +139,31 @@ BSL 1.1 — Free for personal use, research, and internal tooling. Converts to M
 
 ---
 
+## v0.2.0: Full Sync, FTS5 Optimize & Session Fork Prevention
+
+> **2026-06-11 | WorkBuddy enhanced-memory v2.5.0 sync**
+
+### 1. Sync: Full child->parent sync
+
+26 memoria_engine/ files synced via sync.py to WorkBuddy enhanced-memory 2026-06-11 state. 23 backlog files converged. 0 BLOCKER / 49 WARNING (path redaction auto-applied).
+
+### 2. Added: FTS5 Optimize + Session Fork Prevention
+
+- **FTS5 segment merge** (`--optimize`): SQLite FTS5 periodic segment merge. Daemon auto-runs every 6 cycles (~3h). Upstream: nousresearch/hermes-agent PR #34596.
+- **Session fork prevention** (fcntl.flock): Kernel-level file lock prevents concurrent distill/close session-id forks. Upstream: nousresearch/hermes-agent PR #34351.
+
+### 3. Fixed: Kanban Worker Import
+
+- `kanban/worker.py` broken import fixed: `from kanban_db import` -> `from .db import`. sync.py IMPORT_REWRITE +1 rule.
+
+### Verification
+
+- All 26 files py_compile: PASS
+- Private absolute path scan: 0 hits
+- Concurrent lock test: 1 success / 1 LOCK_CONFLICT (expected)
+
+---
+
 > *"算力与记忆的物理隔离。Compute is tribal — it belongs to the session. Memory is sovereign — it belongs to the agent."*
 >
 > — Hermes-Nexus Project, May 2026

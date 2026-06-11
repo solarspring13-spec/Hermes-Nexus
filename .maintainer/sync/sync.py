@@ -261,6 +261,7 @@ IMPORT_REWRITE = {
     "from correction_tracker import": "from ..utils.correction_tracker import",
     "from confidence_scorer import": "from ..skills.confidence_scorer import",
     "from sequence_analyzer import": "from ..models.sequence_analyzer import",
+    "from kanban_db import":        "from .db import",
 }
 
 

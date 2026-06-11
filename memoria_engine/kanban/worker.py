@@ -25,7 +25,7 @@ from typing import Dict, Any, List, Optional
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
-from kanban_db import (
+from .db import (
     get_db, DB_PATH,
     get_task, list_tasks, update_task_status,
     worker_heartbeat, get_active_workers, get_idle_workers,
